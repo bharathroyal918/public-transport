@@ -1,26 +1,44 @@
-import { useState } from 'react'
-import Dashboard from './components/Dashboard'
+import React from 'react';
+import Dashboard from './components/Dashboard';
+
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null, errorInfo: null };
+    }
+
+    static getDerivedStateFromError(error) {
+        return { hasError: true };
+    }
+
+    componentDidCatch(error, errorInfo) {
+        this.setState({ error, errorInfo });
+        console.error("Uncaught error:", error, errorInfo);
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="p-8 bg-red-50 min-h-screen text-red-900">
+                    <h1 className="text-2xl font-bold mb-4">Something went wrong.</h1>
+                    <details className="whitespace-pre-wrap font-mono text-sm bg-red-100 p-4 rounded border border-red-200">
+                        {this.state.error && this.state.error.toString()}
+                        <br />
+                        {this.state.errorInfo && this.state.errorInfo.componentStack}
+                    </details>
+                </div>
+            );
+        }
+
+        return this.props.children;
+    }
+}
 
 function App() {
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-            <nav className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex justify-between h-16 items-center">
-                        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                            TransitFlow AI
-                        </h1>
-                        <div className="flex space-x-4">
-                            <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm font-medium">System Active</span>
-                        </div>
-                    </div>
-                </div>
-            </nav>
-
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <Dashboard />
-            </main>
-        </div>
+        <ErrorBoundary>
+            <Dashboard />
+        </ErrorBoundary>
     )
 }
 
