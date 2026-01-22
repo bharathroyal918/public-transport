@@ -1,119 +1,100 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import pandas as pd
-import numpy as np
-from fastapi.middleware.cors import CORSMiddleware
+import googlemaps # New dependency
 
-app = FastAPI(title="Public Transport Delay Prediction API")
+app = FastAPI(title="Industrial Transit Prediction API")
 
-# Enable CORS for frontend
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, replace with specific frontend URL
+    allow_origins=["*"],  # Allow all origins (change in production)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Initialize Google Maps Client
+# Get your API key from Google Cloud Console
+gmaps = googlemaps.Client(key="AIzaSyCi3U0TUQmlrrrVOaR-aG6k4KNusN8DOKg")
+
 # Load Model
 try:
-    model = joblib.load('delay_model.pkl')
-    print("Model loaded successfully.")
+    model = joblib.load('delay_model.pkl') # cite: 2
 except FileNotFoundError:
     model = None
-    print("Warning: delay_model.pkl not found. Predictions will fail until model is trained.")
 
-class PredictionRequest(BaseModel):
+class TripPredictionRequest(BaseModel):
+    origin: str
+    destination: str
     Route_ID: str
     Weather_Condition: str
     Event_Type: str
     Hour: int
     Day_OfWeek: int
 
-@app.get("/")
-def read_root():
-    return {"message": "Public Transport Delay Prediction API is Running"}
-
-@app.post("/predict")
-def predict_delay(request: PredictionRequest):
+@app.post("/predict-trip")
+def predict_trip(request: TripPredictionRequest):
     if model is None:
-        raise HTTPException(status_code=500, detail="Model not loaded. Please train the model first.")
-    
-    # Create DataFrame from input
-    input_data = pd.DataFrame([request.dict()])
-    
+        raise HTTPException(status_code=500, detail="Model not trained")
+
     try:
-        prediction = model.predict(input_data)[0]
-        # Return prediction and some context
+        # 1. Get Base Time from Google Maps
+        directions = gmaps.distance_matrix(request.origin, request.destination, mode="transit")
+        google_time_sec = directions['rows'][0]['elements'][0]['duration']['value']
+        google_time_min = google_time_sec / 60
+
+        # 2. Get ML Predicted Delay
+        features = pd.DataFrame([{
+            "Route_ID": request.Route_ID,
+            "Weather_Condition": request.Weather_Condition,
+            "Event_Type": request.Event_Type,
+            "Hour": request.Hour,
+            "Day_OfWeek": request.Day_OfWeek
+        }])
+        
+        delay_prediction = model.predict(features)[0] # cite: 2
+        total_time = google_time_min + delay_prediction
+
         return {
-            "predicted_delay_minutes": round(prediction, 2),
-            "severity": "High" if prediction > 20 else "Moderate" if prediction > 10 else "Low"
+            "google_maps_base_time": round(google_time_min, 2),
+            "predicted_extra_delay": round(delay_prediction, 2),
+            "total_estimated_arrival": round(total_time, 2),
+            "units": "minutes"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/health")
-def health_check():
-    return {"status": "healthy", "model_loaded": model is not None}
-
-@app.get("/feature-importance")
-def get_feature_importance():
-    if model is None:
-        raise HTTPException(status_code=500, detail="Model not loaded.")
-    
-    try:
-        # Get feature names
-        preprocessor = model.named_steps['preprocessor']
-        regressor = model.named_steps['regressor']
-        
-        cat_features = ['Route_ID', 'Weather_Condition', 'Event_Type']
-        num_features = ['Hour', 'Day_OfWeek']
-        
-        # Get one-hot names
-        ohe = preprocessor.named_transformers_['cat']
-        cat_names = ohe.get_feature_names_out(cat_features)
-        
-        # All feature names in order
-        all_features = list(cat_names) + num_features
-        
-        importances = regressor.feature_importances_
-        
-        # Combine
-        feature_impact = []
-        for name, score in zip(all_features, importances):
-            feature_impact.append({"feature": name, "importance": float(score)})
-            
-        # Sort
-        feature_impact.sort(key=lambda x: x['importance'], reverse=True)
-        return feature_impact
-    except Exception as e:
-        print(f"Error calculating feature importance: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/route-risks")
-def get_route_risks():
-    try:
-        df = pd.read_csv('transport_data.csv')
-        risk_data = df.groupby('Route_ID')['Delay_Minutes'].mean().reset_index()
-        risk_data['Delay_Minutes'] = risk_data['Delay_Minutes'].round(2)
-        return risk_data.to_dict(orient='records')
-    except Exception as e:
-        print(f"Error calculating route risks: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/routes")
 def get_routes():
     try:
-        # Return unique Route IDs from the training data
-        if model is None:
-             raise HTTPException(status_code=500, detail="Model not loaded")
-        
-        # We can read from csv or getting from preprocessor if we stored it
-        # Safest is to read unique values from csv used for training or load mapping
         df = pd.read_csv('transport_data.csv')
-        routes = df['Route_ID'].unique().tolist()
-        routes.sort()
-        return routes
+        unique_routes = sorted(df['Route_ID'].unique().tolist())
+        return {"routes": unique_routes}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load routes: {str(e)}")
+
+@app.post("/predict-trend")
+def predict_trend(request: TripPredictionRequest):
+    if model is None:
+        raise HTTPException(status_code=500, detail="Model not trained")
+    
+    try:
+        trend_data = []
+        # Predict for every hour of the day (0-23)
+        for h in range(24):
+            features = pd.DataFrame([{
+                "Route_ID": request.Route_ID,
+                "Weather_Condition": request.Weather_Condition,
+                "Event_Type": request.Event_Type,
+                "Hour": h,
+                "Day_OfWeek": request.Day_OfWeek
+            }])
+            predicted_delay = model.predict(features)[0]
+            trend_data.append({"hour": h, "delay": round(predicted_delay, 2)})
+            
+        return {"trend": trend_data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
