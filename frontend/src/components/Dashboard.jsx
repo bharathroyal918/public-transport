@@ -13,7 +13,10 @@ const Dashboard = () => {
         Weather_Condition: 'Clear',
         Event_Type: 'Normal',
         Hour: 12,
-        Day_OfWeek: 0
+        Day_OfWeek: 0,
+        Temperature: 30,     // Default 30C
+        Precipitation: 0,    // Default 0mm
+        Event_Attendance: 0  // Default 0
     });
 
     // Data States
@@ -23,9 +26,20 @@ const Dashboard = () => {
     const [searchHistory, setSearchHistory] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [busAgencies, setBusAgencies] = useState([]);
 
-    // State for Map Display (Decoupled from Form Input)
-    const [displayedTrip, setDisplayedTrip] = useState({ origin: '', destination: '' });
+    // Debounced Search Terms for Auto-Update
+    const [debouncedOrigin, setDebouncedOrigin] = useState('');
+    const [debouncedDestination, setDebouncedDestination] = useState('');
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedOrigin(formData.origin);
+            setDebouncedDestination(formData.destination);
+        }, 1500); // 1.5s delay to prevent spamming
+
+        return () => clearTimeout(timer);
+    }, [formData.origin, formData.destination]);
 
     // Initial Data Fetch
     useEffect(() => {
@@ -48,17 +62,47 @@ const Dashboard = () => {
         loadHistory();
     }, []);
 
+    // Auto-update granular details based on high-level selection (Defaults)
+    useEffect(() => {
+        setFormData(prev => {
+            // ... (keep existing logic)
+            let temp = prev.Temperature;
+            let precip = prev.Precipitation;
+            let attend = prev.Event_Attendance;
+
+            // Weather Logic
+            if (prev.Weather_Condition === 'Rainy') { precip = 20; temp = 25; }
+            else if (prev.Weather_Condition === 'Snowy') { precip = 10; temp = -2; }
+            else if (prev.Weather_Condition === 'Clear') { precip = 0; temp = 30; }
+            else if (prev.Weather_Condition === 'Sunny') { precip = 0; temp = 35; }
+            else if (prev.Weather_Condition === 'Cloudy') { precip = 0; temp = 28; }
+
+            // Event Logic
+            if (prev.Event_Type === 'Sports') attend = 40000;
+            else if (prev.Event_Type === 'Concert') attend = 25000;
+            else if (prev.Event_Type === 'Festival') attend = 60000;
+            else if (prev.Event_Type === 'Protest') attend = 10000;
+            else attend = 0;
+
+            return { ...prev, Temperature: temp, Precipitation: precip, Event_Attendance: attend };
+        });
+    }, [formData.Weather_Condition, formData.Event_Type]);
+
+    // Auto-Trigger Prediction on Debounced Input Change
+    useEffect(() => {
+        if (debouncedOrigin && debouncedDestination && debouncedOrigin !== debouncedDestination) {
+            handlePredict();
+        }
+    }, [debouncedOrigin, debouncedDestination]);
+
     const handlePredict = async () => {
         setError(null);
         setLoading(true);
         setResult(null);
         setTrendData([]);
 
-        // Update Map only on Calculate
-        setDisplayedTrip({
-            origin: formData.origin,
-            destination: formData.destination
-        });
+        // Clear map route immediately to prevent ghosting
+        setMapDirections(null);
 
         try {
             // Main Prediction
@@ -89,12 +133,14 @@ const Dashboard = () => {
 
             // Update History
             const newHistoryItem = { ...formData, timestamp: new Date().toISOString() };
-            const updatedHistory = [newHistoryItem, ...searchHistory].slice(0, 10); // Keep last 10
+            const updatedHistory = [newHistoryItem, ...searchHistory].slice(0, 10);
             setSearchHistory(updatedHistory);
             localStorage.setItem('transitHistory', JSON.stringify(updatedHistory));
 
         } catch (err) {
-            setError(err.message);
+            console.error(err);
+            // Don't set visible error for auto-updates to avoid annoying UI flicker
+            // setError(err.message); 
         } finally {
             setLoading(false);
         }
@@ -119,6 +165,10 @@ const Dashboard = () => {
     const handleDirectionsFetched = useCallback((directions) => {
         setMapDirections(directions);
         setSelectedRouteIndex(0);
+    }, []);
+
+    const handleBusAgenciesFetched = useCallback((agencies) => {
+        setBusAgencies(agencies);
     }, []);
 
     // Calculate Dynamic Total Time based on Selected Route + AI Delay
@@ -264,6 +314,52 @@ const Dashboard = () => {
                         </div>
                     </div>
 
+                    {/* Granular "What-If" Controls */}
+                    <div className="border-t border-gray-100 pt-3 mt-2">
+                        <p className="text-xs font-semibold text-gray-400 uppercase mb-3">Scenario Analysis (What-If)</p>
+
+                        <div className="space-y-3">
+                            <div>
+                                <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-gray-600">Rainfall (mm)</span>
+                                    <span className="font-bold text-blue-600">{formData.Precipitation} mm</span>
+                                </div>
+                                <input
+                                    type="range" min="0" max="100" step="1"
+                                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                    value={formData.Precipitation}
+                                    onChange={(e) => setFormData({ ...formData, Precipitation: parseFloat(e.target.value) })}
+                                />
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-gray-600">Temperature (°C)</span>
+                                    <span className="font-bold text-orange-600">{formData.Temperature}°C</span>
+                                </div>
+                                <input
+                                    type="range" min="-10" max="50" step="1"
+                                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                                    value={formData.Temperature}
+                                    onChange={(e) => setFormData({ ...formData, Temperature: parseFloat(e.target.value) })}
+                                />
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-gray-600">Crowd Size</span>
+                                    <span className="font-bold text-purple-600">{formData.Event_Attendance.toLocaleString()}</span>
+                                </div>
+                                <input
+                                    type="range" min="0" max="100000" step="1000"
+                                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                    value={formData.Event_Attendance}
+                                    onChange={(e) => setFormData({ ...formData, Event_Attendance: parseInt(e.target.value) })}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                     <button
                         onClick={handlePredict}
                         disabled={loading}
@@ -292,11 +388,11 @@ const Dashboard = () => {
                 {/* 1. Map Section (Top) */}
                 <div className="h-[50%] bg-gray-100 relative border-b border-gray-200">
                     <MapComponent
-                        key={`${displayedTrip.origin}-${displayedTrip.destination}`}
                         className="w-full h-full"
-                        origin={displayedTrip.origin}
-                        destination={displayedTrip.destination}
+                        origin={debouncedOrigin}
+                        destination={debouncedDestination}
                         onDirectionsFetched={handleDirectionsFetched}
+                        onBusAgenciesFetched={handleBusAgenciesFetched}
                         directions={mapDirections}
                         routeIndex={selectedRouteIndex}
                     />
@@ -310,7 +406,7 @@ const Dashboard = () => {
                         <div className="px-6 py-4 bg-white border-b border-gray-100 flex justify-between items-center shadow-sm z-10">
                             <div>
                                 <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                                    {displayedTrip.origin} <span className="text-gray-400">→</span> {displayedTrip.destination}
+                                    {debouncedOrigin} <span className="text-gray-400">→</span> {debouncedDestination}
                                 </h2>
                                 <p className="text-sm text-gray-500">
                                     {mapDirections.routes[selectedRouteIndex]?.summary}
@@ -332,10 +428,10 @@ const Dashboard = () => {
 
                     {/* Scrollable Content: Routes & Graphs */}
                     <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-                        <div className="flex gap-6 h-full">
+                        <div className="flex gap-6 min-h-full">
 
                             {/* Available Routes List */}
-                            <div className="w-1/3 min-w-[250px] space-y-3">
+                            <div className="w-1/3 min-w-[250px] space-y-3 h-fit">
                                 <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Available Routes</h4>
                                 {mapDirections?.routes.map((route, idx) => {
                                     const isSelected = idx === selectedRouteIndex;
@@ -368,34 +464,71 @@ const Dashboard = () => {
                                 )}
                             </div>
 
-                            {/* Analytics / Charts */}
-                            <div className="flex-1 bg-white rounded-xl border border-gray-200 p-4 shadow-sm h-full max-h-[300px]">
-                                <h4 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                                    <TrendingUp size={16} /> Hourly Delay Forecast
-                                </h4>
-                                {trendData.length > 0 ? (
-                                    <div className="w-full h-[85%]">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={trendData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-                                                <defs>
-                                                    <linearGradient id="colorDelay" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                                    </linearGradient>
-                                                </defs>
-                                                <XAxis dataKey="hour" tick={{ fontSize: 10 }} />
-                                                <YAxis tick={{ fontSize: 10 }} />
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                                <Tooltip />
-                                                <Area type="monotone" dataKey="delay" stroke="#2563eb" fillOpacity={1} fill="url(#colorDelay)" />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
+                            {/* Analytics / Charts & Available Travels */}
+                            <div className="flex-1 flex flex-col gap-6">
+                                {/* Hourly Delay Forecast Chart */}
+                                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col" style={{ height: '280px' }}>
+                                    <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2 shrink-0">
+                                        <TrendingUp size={16} /> Hourly Delay Forecast
+                                    </h4>
+                                    {trendData.length > 0 ? (
+                                        <div className="flex-1 w-full min-h-0">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <AreaChart data={trendData} margin={{ top: 5, right: 20, left: -10, bottom: 0 }}>
+                                                    <defs>
+                                                        <linearGradient id="colorDelay" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                                                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <XAxis dataKey="hour" tick={{ fontSize: 10 }} />
+                                                    <YAxis tick={{ fontSize: 10 }} />
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <Tooltip />
+                                                    <Area type="monotone" dataKey="delay" stroke="#2563eb" fillOpacity={1} fill="url(#colorDelay)" />
+                                                </AreaChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    ) : (
+                                        <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+                                            Forecast available after calculation
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Available Travels Dialog */}
+                                <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col" style={{ height: '500px' }}>
+                                    <h4 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2 shrink-0">
+                                        <Car size={16} className="text-blue-600" /> Available Travels
+                                    </h4>
+                                    <div className="flex-1 overflow-y-auto">
+                                        {busAgencies.length > 0 ? (
+                                            <div className="grid grid-cols-2 gap-3 pr-2">
+                                                {busAgencies.map((agency, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg hover:shadow-md transition-all cursor-pointer hover:border-blue-400"
+                                                    >
+                                                        <div className="flex items-start gap-2">
+                                                            <span className="text-xl mt-0.5">🚌</span>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-sm font-bold text-gray-800 truncate">{agency.name}</p>
+                                                                <p className="text-xs text-gray-500 line-clamp-2">{agency.formatted_address}</p>
+                                                                {agency.rating && (
+                                                                    <p className="text-xs text-yellow-600 mt-1">⭐ {agency.rating.toFixed(1)}</p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-6 text-gray-400 text-sm">
+                                                {debouncedOrigin ? 'Loading available travels...' : 'Enter origin to see available travels'}
+                                            </div>
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-                                        Forecast available after calculation
-                                    </div>
-                                )}
+                                </div>
                             </div>
                         </div>
                     </div>

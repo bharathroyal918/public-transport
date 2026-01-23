@@ -13,11 +13,14 @@ const defaultCenter = {
     lng: 80.6480
 };
 
-const MapComponent = ({ origin, destination, className, onDirectionsFetched, directions, routeIndex }) => {
+// Libraries must be a constant to prevent script reloading loops
+const libraries = ["places"];
+
+const MapComponent = ({ origin, destination, className, onDirectionsFetched, directions, routeIndex, onBusAgenciesFetched }) => {
     const { isLoaded } = useJsApiLoader({
         id: 'google-map-script',
-        googleMapsApiKey: "Enter your API key here",
-        libraries: ["places"]
+        googleMapsApiKey: "AIzaSyCi3U0TUQmlrrrVOaR-aG6k4KNusN8DOKg",
+        libraries
     });
 
     const [map, setMap] = useState(null);
@@ -32,49 +35,77 @@ const MapComponent = ({ origin, destination, className, onDirectionsFetched, dir
         setMap(null);
     }, []);
 
-    // Effect to fetch directions
+    // 1. Directions Effect
     React.useEffect(() => {
-        if (isLoaded && map && origin && destination) {
-            const directionsService = new google.maps.DirectionsService();
-            directionsService.route({
-                origin: origin,
-                destination: destination,
-                travelMode: google.maps.TravelMode.DRIVING,
-                drivingOptions: {
-                    departureTime: new Date(),
-                    trafficModel: 'bestguess'
-                },
-                provideRouteAlternatives: true
-            }, (result, status) => {
-                if (status === google.maps.DirectionsStatus.OK) {
-                    // Pass result up to parent (Dashboard)
-                    if (onDirectionsFetched) {
-                        onDirectionsFetched(result);
-                    }
-                    // Explicitly center map on the found route
-                    if (map && result.routes[0].bounds) {
-                        map.fitBounds(result.routes[0].bounds);
-                    }
-                } else {
-                    console.error(`error fetching directions ${result}`);
-                }
-            });
+        if (!isLoaded || !map || !origin || !destination) return;
 
-            // Fetch Bus Travels near Origin
-            const placesService = new google.maps.places.PlacesService(map);
-            const request = {
+        let aborted = false;
+        const directionsService = new google.maps.DirectionsService();
+
+        directionsService.route({
+            origin: origin,
+            destination: destination,
+            travelMode: google.maps.TravelMode.DRIVING,
+            drivingOptions: {
+                departureTime: new Date(),
+                trafficModel: 'bestguess'
+            },
+            provideRouteAlternatives: true
+        }, (result, status) => {
+            if (aborted) return;
+            if (status === google.maps.DirectionsStatus.OK) {
+                if (onDirectionsFetched) onDirectionsFetched(result);
+                // Center Map
+                if (map && result.routes[0].bounds) {
+                    map.fitBounds(result.routes[0].bounds);
+                }
+            } else {
+                console.error(`Directions fetch failed: ${status}`);
+            }
+        });
+
+        return () => { aborted = true; };
+    }, [isLoaded, map, origin, destination, onDirectionsFetched]);
+
+    // 2. Places/Buses Effect
+    React.useEffect(() => {
+        if (!isLoaded || !map || !origin) return;
+
+        let aborted = false;
+        // Explicitly clear markers when origin changes
+        setBusAgencies([]);
+        setSelectedAgency(null);
+
+        const placesService = new google.maps.places.PlacesService(map);
+
+        const fetchPrivateUtils = new Promise((resolve) => {
+            placesService.textSearch({
                 query: `bus travels in ${origin}`,
                 fields: ['name', 'geometry', 'formatted_address', 'rating'],
-            };
-
-            placesService.textSearch(request, (results, status) => {
-                if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-                    // Take top results
-                    setBusAgencies(results.slice(0, 8));
-                }
+            }, (results, status) => {
+                resolve((status === google.maps.places.PlacesServiceStatus.OK && results) ? results : []);
             });
-        }
-    }, [isLoaded, map, origin, destination, onDirectionsFetched]);
+        });
+
+        const fetchPublicRTC = new Promise((resolve) => {
+            placesService.textSearch({
+                query: `RTC bus station in ${origin}`,
+                fields: ['name', 'geometry', 'formatted_address', 'rating'],
+            }, (results, status) => {
+                resolve((status === google.maps.places.PlacesServiceStatus.OK && results) ? results : []);
+            });
+        });
+
+        Promise.all([fetchPrivateUtils, fetchPublicRTC]).then(([privateBuses, publicBuses]) => {
+            if (aborted) return;
+            // Mix & Slice
+            const combined = [...publicBuses.slice(0, 5), ...privateBuses.slice(0, 5)];
+            setBusAgencies(combined);
+            if (onBusAgenciesFetched) onBusAgenciesFetched(combined);
+        });
+
+        return () => { aborted = true; };
+    }, [isLoaded, map, origin, onBusAgenciesFetched]);
 
 
     if (!isLoaded) return <div className="h-full w-full flex items-center justify-center bg-gray-100 text-gray-500">Loading Map...</div>;
@@ -108,7 +139,7 @@ const MapComponent = ({ origin, destination, className, onDirectionsFetched, dir
                             suppressMarkers: !isSelected, // Only show markers for selected route
                             preserveViewport: true, // Don't fight for viewport
                             polylineOptions: {
-                                strokeColor: isSelected ? '#1e40af' : '#94a3b8', // Dark Blue vs Light Gray
+                                strokeColor: isSelected ? '#2563eb' : '#94a3b8', // Blue 600 vs Light Gray
                                 strokeOpacity: isSelected ? 1.0 : 0.6,
                                 strokeWeight: isSelected ? 8 : 5,
                                 zIndex: isSelected ? 50 : 1 // Layering

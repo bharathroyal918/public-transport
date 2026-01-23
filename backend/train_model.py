@@ -22,7 +22,7 @@ def train_model():
 
     # Preprocessing
     categorical_features = ['Route_ID', 'Weather_Condition', 'Event_Type']
-    numerical_features = ['Hour', 'Day_OfWeek']
+    numerical_features = ['Hour', 'Day_OfWeek', 'Temperature', 'Precipitation', 'Event_Attendance']
 
     # Create a column transformer
     preprocessor = ColumnTransformer(
