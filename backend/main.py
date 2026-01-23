@@ -18,7 +18,7 @@ app.add_middleware(
 
 # Initialize Google Maps Client
 # Get your API key from Google Cloud Console
-gmaps = googlemaps.Client(key="AIzaSyCi3U0TUQmlrrrVOaR-aG6k4KNusN8DOKg")
+gmaps = googlemaps.Client(key="Your API key is here")
 
 # Load Model
 try:
