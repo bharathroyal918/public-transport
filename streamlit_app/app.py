@@ -46,7 +46,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Configuration & Constants ---
-# Ideally, use st.secrets for this in production
 API_KEY = "AIzaSyCi3U0TUQmlrrrVOaR-aG6k4KNusN8DOKg"
 
 # --- Load Resources (Cached) ---
@@ -56,12 +55,11 @@ def load_resources():
     gmaps = googlemaps.Client(key=API_KEY)
     
     # Load Model
-    # Since this file is in backend/, we look for files in the same directory
     model_path = os.path.join(os.path.dirname(__file__), 'delay_model.pkl')
     try:
         model = joblib.load(model_path)
     except FileNotFoundError:
-        st.error(f"Model file not found at {model_path}. Please check that delay_model.pkl is in the backend directory.")
+        st.error(f"Model file not found at {model_path}. Please check deployment.")
         model = None
 
     # Load Routes
@@ -129,6 +127,7 @@ if calculate_btn:
                 directions_result = gmaps.directions(origin, destination, mode="transit", departure_time=now)
                 
                 # For base time calculation (using distance matrix as in backend/main.py or directions result)
+                # Using distance matrix ensures consistency with backend logic, but directions result has duration too.
                 # directions_result[0]['legs'][0]['duration']['value'] is seconds.
                 
                 if not directions_result:
@@ -216,7 +215,7 @@ if calculate_btn:
             st.error(f"An error occurred: {str(e)}")
 
 elif not available_routes:
-    st.info("Loading system resources... Please wait.")
+    st.info("Loading system resources...")
 
 # Footer
 st.markdown("---")
