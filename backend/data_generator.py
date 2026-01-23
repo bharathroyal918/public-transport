@@ -34,48 +34,69 @@ def generate_data(num_samples=5000):
         hour = random.randint(5, 23)  # Operating hours
         day_of_week = date.weekday()  # 0=Monday, 6=Sunday
         
+        # New Granular Features
+        temperature = round(np.random.normal(30, 5), 1) # Avg 30C in Hyderabad
+        precipitation = 0.0
+        event_attendance = 0
+        
+        # Correlate features with categories for realism
+        if weather == 'Rainy':
+            precipitation = round(random.uniform(5.0, 50.0), 1)
+            temperature -= 3 # Rain cools it down
+        elif weather == 'Snowy':
+            temperature = round(random.uniform(-5.0, 2.0), 1)
+        elif weather == 'Sunny':
+            temperature += 2
+            
+        if event != 'None':
+            # Attendance in thousands
+            if event == 'Sports': event_attendance = random.randint(20000, 60000)
+            elif event == 'Concert': event_attendance = random.randint(10000, 40000)
+            elif event == 'Festival': event_attendance = random.randint(50000, 100000)
+            elif event == 'Protest': event_attendance = random.randint(5000, 20000)
+        
         # Base delay logic (minutes)
         base_delay = 0
         
-        # 1. Random Route Factor (Simulating busy routes)
-        # Hash route string to get a consistent "busyness" factor
+        # 1. Random Route Factor
         route_hash = hash(route) % 10
         if route_hash > 7: 
             base_delay += 5
             
-        # 2. Time Factor (Peak Hours: 7-9 AM, 5-7 PM)
+        # 2. Time Factor (Rush Hours)
         if 7 <= hour <= 9 or 17 <= hour <= 19:
             base_delay += 15
         elif 10 <= hour <= 16:
             base_delay += 5
             
-        # 3. Weather Factor
-        if weather == 'Rainy':
-            base_delay += 10
-        elif weather == 'Snowy':
-            base_delay += 25
-        elif weather == 'Cloudy':
-            base_delay += 2
-            
-        # 4. Event Factor
-        if event == 'Sports':
-            base_delay += 20
-        elif event == 'Concert':
-            base_delay += 15
-        elif event == 'Protest':
-            base_delay += 30
-        elif event == 'Festival':
+        # 3. Weather Factor (Granular)
+        # 0.5 min delay per mm of rain
+        base_delay += (precipitation * 0.5) 
+        
+        # Extreme heat delay (>40C slows things down slighty due to overheating/fatigue)
+        if temperature > 40:
+            base_delay += 5
+        # Freezing delay
+        if temperature < 0:
             base_delay += 10
             
-        # 5. Day Factor (Fridays are busier)
+        # 4. Event Factor (Granular)
+        # 1 min delay per 5000 people
+        base_delay += (event_attendance / 5000)
+        
+        # Extra penalty for specific chaotic events
+        if event == 'Protest':
+            base_delay += 10
+            
+        # 5. Day Factor
         if day_of_week == 4: # Friday
             base_delay += 5
-        if day_of_week >= 5: # Weekend (less traffic usually, but depends)
+        if day_of_week >= 5: # Weekend
             base_delay -= 5
             
         # Add random noise
-        noise = np.random.normal(0, 5) # Standard deviation of 5 mins
-        final_delay = max(0, base_delay + noise) # Delay can't be negative
+        noise = np.random.normal(0, 5)
+        final_delay = max(0, base_delay + noise)
         
         data.append({
             'Route_ID': route,
@@ -83,6 +104,9 @@ def generate_data(num_samples=5000):
             'Event_Type': event,
             'Hour': hour,
             'Day_OfWeek': day_of_week,
+            'Temperature': temperature,
+            'Precipitation': precipitation,
+            'Event_Attendance': event_attendance,
             'Delay_Minutes': round(final_delay, 2)
         })
         

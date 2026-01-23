@@ -34,6 +34,9 @@ class TripPredictionRequest(BaseModel):
     Event_Type: str
     Hour: int
     Day_OfWeek: int
+    Temperature: float
+    Precipitation: float
+    Event_Attendance: int
 
 @app.post("/predict-trip")
 def predict_trip(request: TripPredictionRequest):
@@ -52,7 +55,10 @@ def predict_trip(request: TripPredictionRequest):
             "Weather_Condition": request.Weather_Condition,
             "Event_Type": request.Event_Type,
             "Hour": request.Hour,
-            "Day_OfWeek": request.Day_OfWeek
+            "Day_OfWeek": request.Day_OfWeek,
+            "Temperature": request.Temperature,
+            "Precipitation": request.Precipitation,
+            "Event_Attendance": request.Event_Attendance
         }])
         
         delay_prediction = model.predict(features)[0] # cite: 2
@@ -90,7 +96,10 @@ def predict_trend(request: TripPredictionRequest):
                 "Weather_Condition": request.Weather_Condition,
                 "Event_Type": request.Event_Type,
                 "Hour": h,
-                "Day_OfWeek": request.Day_OfWeek
+                "Day_OfWeek": request.Day_OfWeek,
+                "Temperature": request.Temperature,
+                "Precipitation": request.Precipitation,
+                "Event_Attendance": request.Event_Attendance
             }])
             predicted_delay = model.predict(features)[0]
             trend_data.append({"hour": h, "delay": round(predicted_delay, 2)})
