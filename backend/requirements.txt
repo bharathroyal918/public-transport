@@ -6,4 +6,8 @@ numpy
 joblib
 python-multipart
 googlemaps
-streamlit
+streamlit>=1.30.0
+altair==4.2.2
+folium
+streamlit-folium
+polyline 
